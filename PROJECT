@@ -1,0 +1,7 @@
+domain: smirlwebs.com
+repo: github.com/smirl/digitalocean-floating-ip-controller
+resources:
+- group: digitalocean
+  kind: FloatingIPBinding
+  version: v1beta1
+version: "2"
