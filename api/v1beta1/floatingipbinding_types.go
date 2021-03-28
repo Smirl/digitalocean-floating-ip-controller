@@ -44,6 +44,10 @@ type FloatingIPBindingStatus struct {
 // +kubebuilder:object:root=true
 
 // FloatingIPBinding is the Schema for the floatingipbindings API
+// +kubebuilder:printcolumn:name="FLOATING_IP",type=string,JSONPath=`.spec.floatingIP`
+// +kubebuilder:printcolumn:name="ASSIGNED_DROPLET_ID",type=string,JSONPath=`.status.assignedDropletID`
+// +kubebuilder:printcolumn:name="ASSIGNED_DROPLET_NAME",type=string,JSONPath=`.status.assignedDropletName`
+// +kubebuilder:subresource:status
 type FloatingIPBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

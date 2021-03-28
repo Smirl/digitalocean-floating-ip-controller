@@ -16,7 +16,17 @@ spec:
     singular: floatingipbinding
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.floatingIP
+      name: FLOATING_IP
+      type: string
+    - jsonPath: .status.assignedDropletID
+      name: ASSIGNED_DROPLET_ID
+      type: string
+    - jsonPath: .status.assignedDropletName
+      name: ASSIGNED_DROPLET_NAME
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: FloatingIPBinding is the Schema for the floatingipbindings API
@@ -80,6 +90,8 @@ spec:
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}
 status:
   acceptedNames:
     kind: ""

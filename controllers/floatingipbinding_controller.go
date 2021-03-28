@@ -42,6 +42,12 @@ import (
 
 const RequeueAfter = time.Minute * 5
 
+// Hold information about a droplet
+type Droplet struct {
+	ID   int
+	Name string
+}
+
 // FloatingIPBindingReconciler reconciles a FloatingIPBinding object
 type FloatingIPBindingReconciler struct {
 	client.Client
@@ -60,21 +66,21 @@ func (r *FloatingIPBindingReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 	// Create a digitalocean client
 	client := godo.NewFromToken(r.DigitaloceanToken)
 
-	floatingIP, err := r.GetFloatingIP(ctx, log, req.NamespacedName)
+	binding, err := r.GetFloatingIPBinding(ctx, log, req.NamespacedName)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
 
-	dropletID, err := r.GetDropletID(ctx, log, client, floatingIP)
+	droplet, err := r.GetDroplet(ctx, log, client, binding)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
-	if dropletID == -1 {
+	if droplet == nil {
 		log.Info("No dropletID found. Requeuing.")
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
 
-	err = r.AssignFloatingIP(ctx, log, client, floatingIP, dropletID)
+	err = r.AssignFloatingIP(ctx, log, client, binding, droplet)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
@@ -115,7 +121,7 @@ func (r *FloatingIPBindingReconciler) nodeToRequest(nodeMapObject handler.MapObj
 	return reconcileRequests
 }
 
-func (r *FloatingIPBindingReconciler) GetFloatingIP(
+func (r *FloatingIPBindingReconciler) GetFloatingIPBinding(
 	ctx context.Context,
 	log logr.Logger,
 	name types.NamespacedName,
@@ -133,12 +139,12 @@ func (r *FloatingIPBindingReconciler) GetFloatingIP(
 	return binding, nil
 }
 
-func (r *FloatingIPBindingReconciler) GetDropletID(
+func (r *FloatingIPBindingReconciler) GetDroplet(
 	ctx context.Context,
 	log logr.Logger,
 	doClient *godo.Client,
 	binding *digitaloceanv1beta1.FloatingIPBinding,
-) (int, error) {
+) (*Droplet, error) {
 	var err error
 
 	// Get NodeSelector or default to everything
@@ -149,7 +155,7 @@ func (r *FloatingIPBindingReconciler) GetDropletID(
 		selector, err = metav1.LabelSelectorAsSelector(binding.Spec.NodeSelector)
 		if err != nil {
 			log.Error(err, "Could not parse NodeSelector")
-			return -1, err
+			return nil, err
 		}
 	}
 
@@ -158,11 +164,11 @@ func (r *FloatingIPBindingReconciler) GetDropletID(
 	err = r.Client.List(ctx, &nodes, client.MatchingLabelsSelector{Selector: selector})
 	if err != nil {
 		log.Error(err, "Could not list nodes")
-		return -1, err
+		return nil, err
 	}
 	if len(nodes.Items) == 0 {
 		log.Info("No nodes matching NodeSelector")
-		return -1, nil
+		return nil, nil
 	}
 
 	// Sort nodes by Age
@@ -191,9 +197,9 @@ func (r *FloatingIPBindingReconciler) GetDropletID(
 	dropletID, err := strconv.Atoi(providerIdStr)
 	if err != nil {
 		log.Error(err, "Could not convert providerId to int")
-		return -1, err
+		return nil, err
 	}
-	return dropletID, nil
+	return &Droplet{ID: dropletID, Name: node.Name}, nil
 }
 
 func (r *FloatingIPBindingReconciler) AssignFloatingIP(
@@ -201,35 +207,40 @@ func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 	log logr.Logger,
 	doClient *godo.Client,
 	binding *digitaloceanv1beta1.FloatingIPBinding,
-	dropletID int,
+	droplet *Droplet,
 ) error {
 	// Use digitalocean API to assign floating IP
+	log = log.WithValues(
+		"dropletID", droplet.ID,
+		"dropletName", droplet.Name,
+		"floatingIP", binding.Spec.FloatingIP,
+	)
 	// Get IP to see if it is already assigned
 	ip, _, err := doClient.FloatingIPs.Get(ctx, binding.Spec.FloatingIP)
 	if err != nil {
 		log.Error(err, "Failed to get floatingIP")
 		return err
 	}
-	if ip.Droplet != nil && ip.Droplet.ID == dropletID {
-		log.Info(
-			"Droplet is already assigned to floatingIP. Skipping.",
-			"dropletName", ip.Droplet.Name,
-			"dropletID", ip.Droplet.ID,
-			"floatingIP", binding.Spec.FloatingIP,
-		)
-		return nil
+
+	if ip.Droplet != nil && ip.Droplet.ID == droplet.ID {
+		log.Info("Droplet is already assigned to floatingIP. Skipping.")
+	} else {
+		// Assign IP if not already assigned
+		_, _, err = doClient.FloatingIPActions.Assign(ctx, binding.Spec.FloatingIP, droplet.ID)
+		if err != nil {
+			log.Error(err, "Failed update floatingIP")
+			return err
+		}
+		log.Info("Assigned droplet to FloatingIP")
 	}
 
-	// Assign IP if not already assigned
-	_, _, err = doClient.FloatingIPActions.Assign(ctx, binding.Spec.FloatingIP, dropletID)
+	// Update status
+	binding.Status.AssignedDropletID = droplet.ID
+	binding.Status.AssignedDropletName = droplet.Name
+	err = r.Status().Update(ctx, binding)
 	if err != nil {
-		log.Error(err, "Failed update floatingIP")
+		log.Error(err, "Failed to update status")
 		return err
 	}
-	log.Info(
-		"Assigned droplet to FloatingIP",
-		"dropletID", ip.Droplet.ID,
-		"floatingIP", binding.Spec.FloatingIP,
-	)
 	return nil
 }
