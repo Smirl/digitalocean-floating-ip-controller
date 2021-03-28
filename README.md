@@ -20,6 +20,10 @@ metadata:
   name: main
 spec:
   floatingIP: 123.10.10.10
+  nodeSelectorPolicy: Newest
+  nodeSelector:
+    matchLabels:
+      role: ingres
 ```
 
 Full CRD API docs can be found at [docs.crds.dev][api].
