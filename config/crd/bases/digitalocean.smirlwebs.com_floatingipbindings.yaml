@@ -43,9 +43,11 @@ spec:
             description: FloatingIPBindingSpec defines the desired state of FloatingIPBinding
             properties:
               floatingIP:
+                description: The floating IP address to bind nodes to. i.e. "1.2.3.4"
                 type: string
               nodeSelector:
-                description: A label selector is a label query over a set of resources. The result of matchLabels and matchExpressions are ANDed. An empty label selector matches all objects. A null label selector matches no objects.
+                description: An optional LabelSelector to select nodes. Defaults to all nodes. A label selector is a label query over a set of resources. The result of matchLabels and matchExpressions are ANDed. An empty label selector matches all objects. A null label selector matches no objects.
+                nullable: true
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements. The requirements are ANDed.
@@ -75,6 +77,8 @@ spec:
                     type: object
                 type: object
               nodeSelectorPolicy:
+                default: Newest
+                description: An optional policy to choose a node from those that match the NodeSelector Defaults to Newest
                 type: string
             required:
             - floatingIP

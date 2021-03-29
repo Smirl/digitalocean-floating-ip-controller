@@ -30,9 +30,22 @@ const (
 
 // FloatingIPBindingSpec defines the desired state of FloatingIPBinding
 type FloatingIPBindingSpec struct {
-	FloatingIP         string                `json:"floatingIP"`
-	NodeSelector       *metav1.LabelSelector `json:"nodeSelector,omitempty"`
-	NodeSelectorPolicy NodeSelectorPolicy    `json:"nodeSelectorPolicy,omitempty"`
+	// The floating IP address to bind nodes to. i.e. "1.2.3.4"
+	FloatingIP string `json:"floatingIP"`
+
+	// An optional LabelSelector to select nodes. Defaults to all nodes.
+	// A label selector is a label query over a set of resources. The result of matchLabels
+	// and matchExpressions are ANDed. An empty label selector matches all objects. A null
+	// label selector matches no objects.
+	// +optional
+	// +nullable
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+
+	// An optional policy to choose a node from those that match the NodeSelector
+	// Defaults to Newest
+	// +kubebuilder:default:="Newest"
+	// +optional
+	NodeSelectorPolicy NodeSelectorPolicy `json:"nodeSelectorPolicy,omitempty"`
 }
 
 // FloatingIPBindingStatus defines the observed state of FloatingIPBinding
