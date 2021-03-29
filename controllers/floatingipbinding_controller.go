@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -188,23 +189,35 @@ func (r *FloatingIPBindingReconciler) GetDroplet(
 	}
 
 	// Sort nodes by Age
-	sort.Slice(nodes.Items, func(i, j int) bool {
+	sort.SliceStable(nodes.Items, func(i, j int) bool {
 		return nodes.Items[i].CreationTimestamp.Before(&nodes.Items[j].CreationTimestamp)
 	})
 
 	// Choose node based on NodeSelectorPolicy
-	var node v1.Node
+	var node *v1.Node
 	switch binding.Spec.NodeSelectorPolicy {
 	case digitaloceanv1beta1.Newest:
-		node = nodes.Items[len(nodes.Items)-1]
+		// Select the first in the list
+		node = &nodes.Items[len(nodes.Items)-1]
 	case digitaloceanv1beta1.Oldest:
-		node = nodes.Items[0]
+		// Select the first in the list
+		node = &nodes.Items[0]
 	case digitaloceanv1beta1.Random:
-		i := rand.IntnRange(0, len(nodes.Items))
-		node = nodes.Items[i]
+		// If already randomly assigned select the same node
+		for _, n := range nodes.Items {
+			if n.GetName() == binding.Status.AssignedDropletName {
+				node = &n
+				log.Info("Randomly assigned droplet still exists. Skipping.")
+				break
+			}
+		}
+		if node == nil {
+			// If current node isn't found select a new one
+			i := rand.IntnRange(0, len(nodes.Items))
+			node = &nodes.Items[i]
+		}
 	default:
-		// Default to Newest
-		node = nodes.Items[len(nodes.Items)-1]
+		return nil, fmt.Errorf("Invalid NodeSelectorPolicy: %s", binding.Spec.NodeSelectorPolicy)
 	}
 
 	// Get dropletID int ID from providerId
