@@ -43,3 +43,4 @@ spec:
             cpu: 100m
             memory: 20Mi
       terminationGracePeriodSeconds: 10
+      priorityClassName: do-floating-ip-controller-priority-class

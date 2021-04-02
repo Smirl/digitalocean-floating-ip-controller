@@ -13,6 +13,7 @@ namePrefix: do-floating-ip-controller-
 
 resources:
 - manager.yaml
+- priorityclass.yaml
 - ./rbac/
 - ./crd/
 
