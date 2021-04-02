@@ -8,7 +8,7 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: controller-manager
+  name: manager
   namespace: system
   labels:
     control-plane: controller-manager
@@ -23,12 +23,18 @@ spec:
         control-plane: controller-manager
     spec:
       containers:
-      - command:
+      - name: manager
+        command:
         - /manager
         args:
         - --enable-leader-election
-        image: controller:latest
-        name: manager
+        image: ghcr.io/smirl/digitalocean-floating-ip-controller:latest
+        env:
+          - name: DO_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: do-floating-ip-controller
+                key: DO_TOKEN
         resources:
           limits:
             cpu: 100m
