@@ -1,6 +1,0 @@
-apiVersion: digitalocean.smirlwebs.com/v1beta1
-kind: FloatingIPBinding
-metadata:
-  name: main
-spec:
-  floatingIP: 139.59.202.70
