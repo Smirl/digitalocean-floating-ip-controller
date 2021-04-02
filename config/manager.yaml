@@ -28,7 +28,7 @@ spec:
         - /manager
         args:
         - --enable-leader-election
-        image: ghcr.io/smirl/digitalocean-floating-ip-controller:latest
+        image: controller:latest
         env:
           - name: DO_TOKEN
             valueFrom:

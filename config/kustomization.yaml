@@ -1,3 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
 # Adds namespace to all resources.
 namespace: do-floating-ip-controller-system
 
@@ -8,9 +11,12 @@ namespace: do-floating-ip-controller-system
 # field above.
 namePrefix: do-floating-ip-controller-
 
-bases:
-- ./rbac/
-
 resources:
 - manager.yaml
-- digitalocean.smirlwebs.com_floatingipbindings.yaml
+- ./rbac/
+- ./crd/
+
+images:
+- name: controller
+  newName: ghcr.io/smirl/digitalocean-floating-ip-controller
+  newTag: latest
