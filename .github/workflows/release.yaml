@@ -41,3 +41,27 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
+
+      - name: Get tag name
+        uses: olegtarasov/get-tag@v2.1
+
+      - uses: azure/setup-kubectl@v1
+        with:
+          version: 'v1.19.4'
+
+      - uses: imranismail/setup-kustomize@v1
+        with:
+          kustomize-version: "4.0.5"
+
+      - uses: azure/k8s-set-context@v1
+        with:
+          method: service-account
+          k8s-url: ${{ secrets.K8S_URL }}
+          k8s-secret: ${{ secrets.K8S_SECRET }}
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '^1.15.10'
+
+      - name: Deploy
+        run: IMG=ghcr.io/smirl/digitalocean-floating-ip-controller:$GIT_TAG_NAME make deploy

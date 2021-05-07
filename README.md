@@ -45,12 +45,27 @@ Currently supported policies are:
 
 ### Installation
 
-TODO
+The controller can be deployed from this repo with:
+
+```console
+IMG=ghcr.io/smirl/digitalocean-floating-ip-controller:v0.1.0 make deploy
+```
 
 ### Controller Configuration
 You **must** provide the following as *environment variables*:
 - `DO_TOKEN`
   - DigitalOcean API token
+
+
+## Contributing
+
+Please feel free to raise an issue or pull request. Releases automattically
+build and deploy to a test cluster. The github workflow requires the ServiceAccount
+to be deployed into the cluster and the token added as a repository secret.
+
+```console
+kubectl apply -f serviceaccount.yaml
+```
 
 [DOKS]: https://www.digitalocean.com/products/kubernetes/
 [bash]: https://github.com/mwthink/digitalocean-floating-ip-controller
