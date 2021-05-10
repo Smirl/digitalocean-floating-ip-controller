@@ -3,5 +3,8 @@ kind: FloatingIPBinding
 metadata:
   name: floatingipbinding-sample
 spec:
-  # Add fields here
-  foo: bar
+  floatingIP: 123.10.10.10
+  nodeSelectorPolicy: Newest
+  nodeSelector:
+    matchLabels:
+      role: ingress
