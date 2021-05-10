@@ -1,7 +1,18 @@
+componentConfig: true
 domain: smirlwebs.com
+layout:
+- go.kubebuilder.io/v3
+multigroup: true
+projectName: digitalocean-floating-ip-controller-v2
 repo: github.com/smirl/digitalocean-floating-ip-controller
 resources:
-- group: digitalocean
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: smirlwebs.com
+  group: digitalocean
   kind: FloatingIPBinding
+  path: github.com/smirl/digitalocean-floating-ip-controller/apis/digitalocean/v1beta1
   version: v1beta1
-version: "2"
+version: "3"

@@ -1,5 +1,5 @@
 /*
-
+Copyright 2021 Alex Williams.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,15 +20,20 @@ import (
 	"flag"
 	"os"
 
+	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	// to ensure that exec-entrypoint and run can make use of them.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	digitaloceanv1beta1 "github.com/smirl/digitalocean-floating-ip-controller/api/v1beta1"
-	"github.com/smirl/digitalocean-floating-ip-controller/controllers"
-	// +kubebuilder:scaffold:imports
+	digitaloceanv1beta1 "github.com/smirl/digitalocean-floating-ip-controller/apis/digitalocean/v1beta1"
+	digitaloceancontrollers "github.com/smirl/digitalocean-floating-ip-controller/controllers/digitalocean"
+	//+kubebuilder:scaffold:imports
 )
 
 var (
@@ -37,19 +42,22 @@ var (
 )
 
 func init() {
-	_ = clientgoscheme.AddToScheme(scheme)
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	_ = digitaloceanv1beta1.AddToScheme(scheme)
-	// +kubebuilder:scaffold:scheme
+	utilruntime.Must(digitaloceanv1beta1.AddToScheme(scheme))
+	//+kubebuilder:scaffold:scheme
 }
 
 func main() {
-	var metricsAddr string
-	var enableLeaderElection bool
-	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
+	var configFile string
+	flag.StringVar(&configFile, "config", "",
+		"The controller will load its initial configuration from this file. "+
+			"Omit this flag to use the default configuration values. "+
+			"Command-line flags override configuration from this file.")
+	opts := zap.Options{
+		Development: true,
+	}
+	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	token, ok := os.LookupEnv("DO_TOKEN")
@@ -57,30 +65,44 @@ func main() {
 		setupLog.Info("Could not find DO_TOKEN environment variable")
 		os.Exit(1)
 	}
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:             scheme,
-		MetricsBindAddress: metricsAddr,
-		Port:               9443,
-		LeaderElection:     enableLeaderElection,
-		LeaderElectionID:   "5f62cd76.smirlwebs.com",
-	})
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	var err error
+	options := ctrl.Options{Scheme: scheme}
+	if configFile != "" {
+		options, err = options.AndFrom(ctrl.ConfigFile().AtPath(configFile))
+		if err != nil {
+			setupLog.Error(err, "unable to load the config file")
+			os.Exit(1)
+		}
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
-	if err = (&controllers.FloatingIPBindingReconciler{
+	if err = (&digitaloceancontrollers.FloatingIPBindingReconciler{
 		Client:            mgr.GetClient(),
-		Log:               ctrl.Log.WithName("controllers").WithName("FloatingIPBinding"),
+		Log:               ctrl.Log.WithName("controllers").WithName("digitalocean").WithName("FloatingIPBinding"),
 		Scheme:            mgr.GetScheme(),
 		DigitaloceanToken: token,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "FloatingIPBinding")
 		os.Exit(1)
 	}
-	// +kubebuilder:scaffold:builder
+	//+kubebuilder:scaffold:builder
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

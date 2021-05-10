@@ -1,5 +1,5 @@
 /*
-
+Copyright 2021 Alex Williams.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // Package v1beta1 contains API Schema definitions for the digitalocean v1beta1 API group
-// +kubebuilder:object:generate=true
-// +groupName=digitalocean.smirlwebs.com
+//+kubebuilder:object:generate=true
+//+groupName=digitalocean.smirlwebs.com
 package v1beta1
 
 import (

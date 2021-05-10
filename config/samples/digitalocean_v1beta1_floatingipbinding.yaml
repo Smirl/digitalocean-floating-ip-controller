@@ -1,0 +1,7 @@
+apiVersion: digitalocean.smirlwebs.com/v1beta1
+kind: FloatingIPBinding
+metadata:
+  name: floatingipbinding-sample
+spec:
+  # Add fields here
+  foo: bar

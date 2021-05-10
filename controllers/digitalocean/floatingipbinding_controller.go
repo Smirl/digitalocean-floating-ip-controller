@@ -1,5 +1,5 @@
 /*
-
+Copyright 2021 Alex Williams.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package digitalocean
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	digitaloceanv1beta1 "github.com/smirl/digitalocean-floating-ip-controller/api/v1beta1"
+	digitaloceanv1beta1 "github.com/smirl/digitalocean-floating-ip-controller/apis/digitalocean/v1beta1"
 )
 
 const RequeueAfter = time.Minute * 5
@@ -57,47 +58,23 @@ type FloatingIPBindingReconciler struct {
 	DigitaloceanToken string
 }
 
+// SetupWithManager sets up the controller with the Manager.
 func (r *FloatingIPBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&digitaloceanv1beta1.FloatingIPBinding{}).
 		Watches(
 			&source.Kind{Type: &v1.Node{}},
-			&handler.EnqueueRequestsFromMapFunc{
-				ToRequests: handler.ToRequestsFunc(r.nodeToRequest),
-			},
+			handler.EnqueueRequestsFromMapFunc(r.nodeToRequests),
 		).
 		Complete(r)
 }
 
-func (r *FloatingIPBindingReconciler) nodeToRequest(nodeMapObject handler.MapObject) []reconcile.Request {
-	// Whenever any node every happens reconcile ALL FloatingIPBindings
-	// List all bindings
-	var bindings digitaloceanv1beta1.FloatingIPBindingList
-	err := r.List(context.Background(), &bindings)
-	if err != nil {
-		r.Log.Error(err, "Failed to list floating IP bindings")
-		return []reconcile.Request{}
-	}
+//+kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;watch;list
 
-	// Convert FloatingIPBindingList to []reconcile.Request
-	var reconcileRequests []reconcile.Request
-	for _, binding := range bindings.Items {
-		reconcileRequests = append(reconcileRequests, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      binding.GetName(),
-				Namespace: binding.GetNamespace(),
-			},
-		})
-	}
-	return reconcileRequests
-}
-
-// +kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;watch;list
-
-func (r *FloatingIPBindingReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := context.Background()
+func (r *FloatingIPBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("floatingipbinding", req.NamespacedName)
 
 	// Create a digitalocean client
@@ -136,6 +113,29 @@ func (r *FloatingIPBindingReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *FloatingIPBindingReconciler) nodeToRequests(node client.Object) []reconcile.Request {
+	// Whenever any node every happens reconcile ALL FloatingIPBindings
+	// List all bindings
+	var bindings digitaloceanv1beta1.FloatingIPBindingList
+	err := r.List(context.Background(), &bindings)
+	if err != nil {
+		r.Log.Error(err, "Failed to list floating IP bindings")
+		return []reconcile.Request{}
+	}
+
+	// Convert FloatingIPBindingList to []reconcile.Request
+	var reconcileRequests []reconcile.Request
+	for _, binding := range bindings.Items {
+		reconcileRequests = append(reconcileRequests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      binding.GetName(),
+				Namespace: binding.GetNamespace(),
+			},
+		})
+	}
+	return reconcileRequests
 }
 
 func (r *FloatingIPBindingReconciler) GetFloatingIPBinding(
