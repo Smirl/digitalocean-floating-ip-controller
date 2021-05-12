@@ -1,0 +1,10 @@
+apiVersion: digitalocean.smirlwebs.com/v1beta1
+kind: FloatingIPBinding
+metadata:
+  name: floatingipbinding-sample
+spec:
+  floatingIP: 123.10.10.10
+  nodeSelectorPolicy: Newest
+  nodeSelector:
+    matchLabels:
+      role: ingress

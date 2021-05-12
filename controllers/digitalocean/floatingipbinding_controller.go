@@ -1,5 +1,5 @@
 /*
-
+Copyright 2021 Alex Williams.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package digitalocean
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	digitaloceanv1beta1 "github.com/smirl/digitalocean-floating-ip-controller/api/v1beta1"
+	digitaloceanv1beta1 "github.com/smirl/digitalocean-floating-ip-controller/apis/digitalocean/v1beta1"
 )
 
 const RequeueAfter = time.Minute * 5
@@ -52,24 +53,65 @@ type Droplet struct {
 // FloatingIPBindingReconciler reconciles a FloatingIPBinding object
 type FloatingIPBindingReconciler struct {
 	client.Client
-	Log               logr.Logger
-	Scheme            *runtime.Scheme
-	DigitaloceanToken string
+	Log                logr.Logger
+	Scheme             *runtime.Scheme
+	DigitaloceanClient *godo.Client
 }
 
+// SetupWithManager sets up the controller with the Manager.
 func (r *FloatingIPBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&digitaloceanv1beta1.FloatingIPBinding{}).
 		Watches(
 			&source.Kind{Type: &v1.Node{}},
-			&handler.EnqueueRequestsFromMapFunc{
-				ToRequests: handler.ToRequestsFunc(r.nodeToRequest),
-			},
+			handler.EnqueueRequestsFromMapFunc(r.nodeToRequests),
 		).
 		Complete(r)
 }
 
-func (r *FloatingIPBindingReconciler) nodeToRequest(nodeMapObject handler.MapObject) []reconcile.Request {
+//+kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;watch;list
+
+func (r *FloatingIPBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := r.Log.WithValues("floatingipbinding", req.NamespacedName)
+
+	// Get the FloatingIPBinding from Kubernetes
+	binding, err := r.GetFloatingIPBinding(ctx, log, req.NamespacedName)
+	if err != nil {
+		return ctrl.Result{RequeueAfter: RequeueAfter}, err
+	}
+
+	// Get the best node/droplet to assign to the floating IP
+	droplet, err := r.GetDroplet(ctx, log, binding)
+	if err != nil {
+		return ctrl.Result{RequeueAfter: RequeueAfter}, err
+	}
+	if droplet == nil {
+		log.Info("No dropletID found. Requeuing.")
+		return ctrl.Result{RequeueAfter: RequeueAfter}, err
+	}
+
+	// Assign the droplet to the floating IP if required
+	err = r.AssignFloatingIP(ctx, log, binding, droplet)
+	if err != nil {
+		return ctrl.Result{RequeueAfter: RequeueAfter}, err
+	}
+
+	// Update status
+	binding.Status.AssignedDropletID = droplet.ID
+	binding.Status.AssignedDropletName = droplet.Name
+	err = r.Status().Update(ctx, binding)
+	if err != nil {
+		log.Error(err, "Failed to update status")
+		return ctrl.Result{RequeueAfter: RequeueAfter}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *FloatingIPBindingReconciler) nodeToRequests(node client.Object) []reconcile.Request {
 	// Whenever any node every happens reconcile ALL FloatingIPBindings
 	// List all bindings
 	var bindings digitaloceanv1beta1.FloatingIPBindingList
@@ -90,52 +132,6 @@ func (r *FloatingIPBindingReconciler) nodeToRequest(nodeMapObject handler.MapObj
 		})
 	}
 	return reconcileRequests
-}
-
-// +kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=digitalocean.smirlwebs.com,resources=floatingipbindings/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;watch;list
-
-func (r *FloatingIPBindingReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := context.Background()
-	log := r.Log.WithValues("floatingipbinding", req.NamespacedName)
-
-	// Create a digitalocean client
-	// TODO: Move to controller set up
-	client := godo.NewFromToken(r.DigitaloceanToken)
-
-	// Get the FloatingIPBinding from Kubernetes
-	binding, err := r.GetFloatingIPBinding(ctx, log, req.NamespacedName)
-	if err != nil {
-		return ctrl.Result{RequeueAfter: RequeueAfter}, err
-	}
-
-	// Get the best node/droplet to assign to the floating IP
-	droplet, err := r.GetDroplet(ctx, log, client, binding)
-	if err != nil {
-		return ctrl.Result{RequeueAfter: RequeueAfter}, err
-	}
-	if droplet == nil {
-		log.Info("No dropletID found. Requeuing.")
-		return ctrl.Result{RequeueAfter: RequeueAfter}, err
-	}
-
-	// Assign the droplet to the floating IP if required
-	err = r.AssignFloatingIP(ctx, log, client, binding, droplet)
-	if err != nil {
-		return ctrl.Result{RequeueAfter: RequeueAfter}, err
-	}
-
-	// Update status
-	binding.Status.AssignedDropletID = droplet.ID
-	binding.Status.AssignedDropletName = droplet.Name
-	err = r.Status().Update(ctx, binding)
-	if err != nil {
-		log.Error(err, "Failed to update status")
-		return ctrl.Result{RequeueAfter: RequeueAfter}, err
-	}
-
-	return ctrl.Result{}, nil
 }
 
 func (r *FloatingIPBindingReconciler) GetFloatingIPBinding(
@@ -160,7 +156,6 @@ func (r *FloatingIPBindingReconciler) GetFloatingIPBinding(
 func (r *FloatingIPBindingReconciler) GetDroplet(
 	ctx context.Context,
 	log logr.Logger,
-	doClient *godo.Client,
 	binding *digitaloceanv1beta1.FloatingIPBinding,
 ) (*Droplet, error) {
 	var err error
@@ -235,7 +230,6 @@ func (r *FloatingIPBindingReconciler) GetDroplet(
 func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 	ctx context.Context,
 	log logr.Logger,
-	doClient *godo.Client,
 	binding *digitaloceanv1beta1.FloatingIPBinding,
 	droplet *Droplet,
 ) error {
@@ -246,7 +240,7 @@ func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 		"floatingIP", binding.Spec.FloatingIP,
 	)
 	// Get IP to see if it is already assigned
-	ip, _, err := doClient.FloatingIPs.Get(ctx, binding.Spec.FloatingIP)
+	ip, _, err := r.DigitaloceanClient.FloatingIPs.Get(ctx, binding.Spec.FloatingIP)
 	if err != nil {
 		log.Error(err, "Failed to get floatingIP")
 		return err
@@ -257,7 +251,7 @@ func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 		log.Info("Droplet is already assigned to floatingIP. Skipping.")
 	} else {
 		// Assign IP if not already assigned
-		_, _, err = doClient.FloatingIPActions.Assign(ctx, binding.Spec.FloatingIP, droplet.ID)
+		_, _, err = r.DigitaloceanClient.FloatingIPActions.Assign(ctx, binding.Spec.FloatingIP, droplet.ID)
 		if err != nil {
 			log.Error(err, "Failed update floatingIP")
 			return err

@@ -1,19 +1,9 @@
-
----
+# permissions for end users to edit floatingipbindings.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  creationTimestamp: null
-  name: manager-role
+  name: floatingipbinding-editor-role
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - nodes
-  verbs:
-  - get
-  - list
-  - watch
 - apiGroups:
   - digitalocean.smirlwebs.com
   resources:
@@ -29,14 +19,6 @@ rules:
 - apiGroups:
   - digitalocean.smirlwebs.com
   resources:
-  - floatingipbindings/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - digitalocean.smirlwebs.com
-  resources:
   - floatingipbindings/status
   verbs:
   - get
-  - patch
-  - update
