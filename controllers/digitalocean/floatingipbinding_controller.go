@@ -53,9 +53,9 @@ type Droplet struct {
 // FloatingIPBindingReconciler reconciles a FloatingIPBinding object
 type FloatingIPBindingReconciler struct {
 	client.Client
-	Log               logr.Logger
-	Scheme            *runtime.Scheme
-	DigitaloceanToken string
+	Log                logr.Logger
+	Scheme             *runtime.Scheme
+	DigitaloceanClient *godo.Client
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -77,10 +77,6 @@ func (r *FloatingIPBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *FloatingIPBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("floatingipbinding", req.NamespacedName)
 
-	// Create a digitalocean client
-	// TODO: Move to controller set up
-	client := godo.NewFromToken(r.DigitaloceanToken)
-
 	// Get the FloatingIPBinding from Kubernetes
 	binding, err := r.GetFloatingIPBinding(ctx, log, req.NamespacedName)
 	if err != nil {
@@ -88,7 +84,7 @@ func (r *FloatingIPBindingReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Get the best node/droplet to assign to the floating IP
-	droplet, err := r.GetDroplet(ctx, log, client, binding)
+	droplet, err := r.GetDroplet(ctx, log, binding)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
@@ -98,7 +94,7 @@ func (r *FloatingIPBindingReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Assign the droplet to the floating IP if required
-	err = r.AssignFloatingIP(ctx, log, client, binding, droplet)
+	err = r.AssignFloatingIP(ctx, log, binding, droplet)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
@@ -160,7 +156,6 @@ func (r *FloatingIPBindingReconciler) GetFloatingIPBinding(
 func (r *FloatingIPBindingReconciler) GetDroplet(
 	ctx context.Context,
 	log logr.Logger,
-	doClient *godo.Client,
 	binding *digitaloceanv1beta1.FloatingIPBinding,
 ) (*Droplet, error) {
 	var err error
@@ -235,7 +230,6 @@ func (r *FloatingIPBindingReconciler) GetDroplet(
 func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 	ctx context.Context,
 	log logr.Logger,
-	doClient *godo.Client,
 	binding *digitaloceanv1beta1.FloatingIPBinding,
 	droplet *Droplet,
 ) error {
@@ -246,7 +240,7 @@ func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 		"floatingIP", binding.Spec.FloatingIP,
 	)
 	// Get IP to see if it is already assigned
-	ip, _, err := doClient.FloatingIPs.Get(ctx, binding.Spec.FloatingIP)
+	ip, _, err := r.DigitaloceanClient.FloatingIPs.Get(ctx, binding.Spec.FloatingIP)
 	if err != nil {
 		log.Error(err, "Failed to get floatingIP")
 		return err
@@ -257,7 +251,7 @@ func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 		log.Info("Droplet is already assigned to floatingIP. Skipping.")
 	} else {
 		// Assign IP if not already assigned
-		_, _, err = doClient.FloatingIPActions.Assign(ctx, binding.Spec.FloatingIP, droplet.ID)
+		_, _, err = r.DigitaloceanClient.FloatingIPActions.Assign(ctx, binding.Spec.FloatingIP, droplet.ID)
 		if err != nil {
 			log.Error(err, "Failed update floatingIP")
 			return err

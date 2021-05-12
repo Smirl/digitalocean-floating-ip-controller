@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/digitalocean/godo"
 	digitaloceanv1beta1 "github.com/smirl/digitalocean-floating-ip-controller/apis/digitalocean/v1beta1"
 	digitaloceancontrollers "github.com/smirl/digitalocean-floating-ip-controller/controllers/digitalocean"
 	//+kubebuilder:scaffold:imports
@@ -65,6 +66,7 @@ func main() {
 		setupLog.Info("Could not find DO_TOKEN environment variable")
 		os.Exit(1)
 	}
+	doClient := godo.NewFromToken(token)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -85,10 +87,10 @@ func main() {
 	}
 
 	if err = (&digitaloceancontrollers.FloatingIPBindingReconciler{
-		Client:            mgr.GetClient(),
-		Log:               ctrl.Log.WithName("controllers").WithName("digitalocean").WithName("FloatingIPBinding"),
-		Scheme:            mgr.GetScheme(),
-		DigitaloceanToken: token,
+		Client:             mgr.GetClient(),
+		Log:                ctrl.Log.WithName("controllers").WithName("digitalocean").WithName("FloatingIPBinding"),
+		Scheme:             mgr.GetScheme(),
+		DigitaloceanClient: doClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "FloatingIPBinding")
 		os.Exit(1)
