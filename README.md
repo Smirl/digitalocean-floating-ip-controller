@@ -56,10 +56,12 @@ You **must** provide the following as *environment variables*:
 - `DO_TOKEN`
   - DigitalOcean API token
 
+This is taken from a secret called `do-floating-ip-controller` which must be
+added to the cluster.
 
 ## Contributing
 
-Please feel free to raise an issue or pull request. Releases automattically
+Please feel free to raise an issue or pull request. Releases automatically
 build and deploy to a test cluster. The github workflow requires the ServiceAccount
 to be deployed into the cluster and the token added as a repository secret.
 

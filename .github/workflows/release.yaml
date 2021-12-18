@@ -42,6 +42,13 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
 
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: prod
+    needs:
+      - build
+    steps:
       - name: Get tag name
         uses: olegtarasov/get-tag@v2.1
 
