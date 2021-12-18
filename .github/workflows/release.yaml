@@ -13,7 +13,7 @@ permissions:
   packages: write
 
 jobs:
-  docker:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
