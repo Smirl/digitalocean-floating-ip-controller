@@ -253,8 +253,15 @@ func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 		// Assign IP if not already assigned
 		_, _, err = r.DigitaloceanClient.FloatingIPActions.Assign(ctx, binding.Spec.FloatingIP, droplet.ID)
 		if err != nil {
-			log.Error(err, "Failed update floatingIP")
-			return err
+			// Check that the error isn't a 422. This occurs if we are already updating the IP
+			doError, ok := err.(*godo.ErrorResponse)
+			if ok && doError.Response.StatusCode == 422 {
+				log.Info("FloatingIP is in pending state. Skipping.")
+				return nil
+			} else {
+				log.Error(err, "Failed update floatingIP")
+				return err
+			}
 		}
 		log.Info("Assigned droplet to FloatingIP")
 	}
