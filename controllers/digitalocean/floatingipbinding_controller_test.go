@@ -50,7 +50,7 @@ var (
 	// getResponseAssigned = floatingIPRoot{
 	// 	FloatingIP: &godo.FloatingIP{IP: TestIP, Droplet: &godo.Droplet{ID: 12345678}},
 	// }
-	// assignResponse = actionRoot{Event: &godo.Action{}}
+	assignResponse = actionRoot{Event: &godo.Action{}}
 )
 
 var _ = Context("Floating IP Controller", func() {
@@ -70,7 +70,7 @@ var _ = Context("Floating IP Controller", func() {
 			httpmock.RegisterResponder(
 				"POST",
 				"/v2/floating_ips/1.2.3.4/actions",
-				httpmock.NewJsonResponderOrPanic(200, getResponseUnassigned),
+				httpmock.NewJsonResponderOrPanic(200, assignResponse),
 			)
 
 			By("Creating a binding")
