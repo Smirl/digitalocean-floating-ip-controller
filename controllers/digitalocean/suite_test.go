@@ -72,7 +72,7 @@ var _ = BeforeSuite(func() {
 
 	//+kubebuilder:scaffold:scheme
 
-	httpClient := http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
+	httpClient := http.Client{Transport: &http.Transport{}}
 	httpmock.ActivateNonDefault(&httpClient)
 	doClient := godo.NewClient(&httpClient)
 
