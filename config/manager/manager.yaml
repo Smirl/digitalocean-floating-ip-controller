@@ -51,11 +51,11 @@ spec:
               name: do-floating-ip-controller
         resources:
           limits:
-            cpu: 100m
-            memory: 30Mi
+            cpu: 200m
+            memory: 128Mi
           requests:
-            cpu: 100m
-            memory: 20Mi
+            cpu: 50m
+            memory: 64Mi
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
       priorityClassName: priority-class
