@@ -59,7 +59,7 @@ jobs:
       - name: Get tag name
         uses: olegtarasov/get-tag@v2.1
 
-      - uses: azure/setup-kubectl@v1
+      - uses: azure/setup-kubectl@v3
         with:
           version: 'v1.19.4'
 
