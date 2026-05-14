@@ -84,7 +84,6 @@ var _ = BeforeSuite(func() {
 	err = (&FloatingIPBindingReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
-		Log:                ctrl.Log.WithName("controllers").WithName("FloatingIPBinding"),
 		DigitaloceanClient: doClient,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

@@ -27,6 +27,10 @@ spec:
       containers:
       - command:
         - /manager
+        args:
+        - "--leader-elect=true"
+        - "--health-probe-bind-address=:8081"
+        - "--metrics-bind-address=:8080"
         image: controller:latest
         name: manager
         securityContext:
@@ -43,6 +47,10 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
         env:      
         - name: DO_TOKEN 
           valueFrom:  

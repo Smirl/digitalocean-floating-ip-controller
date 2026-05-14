@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/digitalocean/godo"
-	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -36,8 +35,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	digitaloceanv1beta1 "github.com/smirl/digitalocean-floating-ip-controller/apis/digitalocean/v1beta1"
 )
@@ -53,7 +52,6 @@ type Droplet struct {
 // FloatingIPBindingReconciler reconciles a FloatingIPBinding object
 type FloatingIPBindingReconciler struct {
 	client.Client
-	Log                logr.Logger
 	Scheme             *runtime.Scheme
 	DigitaloceanClient *godo.Client
 }
@@ -63,7 +61,7 @@ func (r *FloatingIPBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&digitaloceanv1beta1.FloatingIPBinding{}).
 		Watches(
-			&source.Kind{Type: &v1.Node{}},
+			&v1.Node{},
 			handler.EnqueueRequestsFromMapFunc(r.nodeToRequests),
 		).
 		Complete(r)
@@ -75,26 +73,26 @@ func (r *FloatingIPBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;watch;list
 
 func (r *FloatingIPBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("floatingipbinding", req.NamespacedName)
+	logger := log.FromContext(ctx)
 
 	// Get the FloatingIPBinding from Kubernetes
-	binding, err := r.GetFloatingIPBinding(ctx, log, req.NamespacedName)
+	binding, err := r.GetFloatingIPBinding(ctx, req.NamespacedName)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
 
 	// Get the best node/droplet to assign to the floating IP
-	droplet, err := r.GetDroplet(ctx, log, binding)
+	droplet, err := r.GetDroplet(ctx, binding)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
 	if droplet == nil {
-		log.Info("No dropletID found. Requeuing.")
+		logger.Info("No dropletID found. Requeuing.")
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
 
 	// Assign the droplet to the floating IP if required
-	err = r.AssignFloatingIP(ctx, log, binding, droplet)
+	err = r.AssignFloatingIP(ctx, binding, droplet)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
@@ -104,24 +102,21 @@ func (r *FloatingIPBindingReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	binding.Status.AssignedDropletName = droplet.Name
 	err = r.Status().Update(ctx, binding)
 	if err != nil {
-		log.Error(err, "Failed to update status")
+		logger.Error(err, "Failed to update status")
 		return ctrl.Result{RequeueAfter: RequeueAfter}, err
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *FloatingIPBindingReconciler) nodeToRequests(node client.Object) []reconcile.Request {
-	// Whenever any node every happens reconcile ALL FloatingIPBindings
-	// List all bindings
+func (r *FloatingIPBindingReconciler) nodeToRequests(ctx context.Context, node client.Object) []reconcile.Request {
+	// Whenever any node event happens, reconcile ALL FloatingIPBindings
 	var bindings digitaloceanv1beta1.FloatingIPBindingList
-	err := r.List(context.Background(), &bindings)
-	if err != nil {
-		r.Log.Error(err, "Failed to list floating IP bindings")
+	if err := r.List(ctx, &bindings); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list floating IP bindings")
 		return []reconcile.Request{}
 	}
 
-	// Convert FloatingIPBindingList to []reconcile.Request
 	var reconcileRequests []reconcile.Request
 	for _, binding := range bindings.Items {
 		reconcileRequests = append(reconcileRequests, reconcile.Request{
@@ -136,17 +131,16 @@ func (r *FloatingIPBindingReconciler) nodeToRequests(node client.Object) []recon
 
 func (r *FloatingIPBindingReconciler) GetFloatingIPBinding(
 	ctx context.Context,
-	log logr.Logger,
 	name types.NamespacedName,
 ) (*digitaloceanv1beta1.FloatingIPBinding, error) {
-	// Get the FloatingIPBinding from Kubernetes
+	logger := log.FromContext(ctx)
 	binding := &digitaloceanv1beta1.FloatingIPBinding{}
 	if err := r.Get(ctx, name, binding); err != nil {
 		err = client.IgnoreNotFound(err)
 		if err != nil {
-			log.Info("unable to fetch FloatingIPBinding object")
+			logger.Info("unable to fetch FloatingIPBinding object")
 		} else {
-			log.Info("unable to fetch FloatingIPBinding object because it has been deleted")
+			logger.Info("unable to fetch FloatingIPBinding object because it has been deleted")
 		}
 		return nil, err
 	}
@@ -155,9 +149,9 @@ func (r *FloatingIPBindingReconciler) GetFloatingIPBinding(
 
 func (r *FloatingIPBindingReconciler) GetDroplet(
 	ctx context.Context,
-	log logr.Logger,
 	binding *digitaloceanv1beta1.FloatingIPBinding,
 ) (*Droplet, error) {
+	logger := log.FromContext(ctx)
 	var err error
 
 	// Get NodeSelector or default to everything
@@ -167,7 +161,7 @@ func (r *FloatingIPBindingReconciler) GetDroplet(
 	} else {
 		selector, err = metav1.LabelSelectorAsSelector(binding.Spec.NodeSelector)
 		if err != nil {
-			log.Error(err, "Could not parse NodeSelector")
+			logger.Error(err, "Could not parse NodeSelector")
 			return nil, err
 		}
 	}
@@ -176,11 +170,11 @@ func (r *FloatingIPBindingReconciler) GetDroplet(
 	var nodes v1.NodeList
 	err = r.Client.List(ctx, &nodes, client.MatchingLabelsSelector{Selector: selector})
 	if err != nil {
-		log.Error(err, "Could not list nodes")
+		logger.Error(err, "Could not list nodes")
 		return nil, err
 	}
 	if len(nodes.Items) == 0 {
-		log.Info("No nodes matching NodeSelector")
+		logger.Info("No nodes matching NodeSelector")
 		return nil, nil
 	}
 
@@ -193,22 +187,19 @@ func (r *FloatingIPBindingReconciler) GetDroplet(
 	var node *v1.Node
 	switch binding.Spec.NodeSelectorPolicy {
 	case digitaloceanv1beta1.Newest:
-		// Select the first in the list
 		node = &nodes.Items[len(nodes.Items)-1]
 	case digitaloceanv1beta1.Oldest:
-		// Select the first in the list
 		node = &nodes.Items[0]
 	case digitaloceanv1beta1.Random:
-		// If already randomly assigned select the same node
+		// If already randomly assigned, keep the same node
 		for _, n := range nodes.Items {
 			if n.GetName() == binding.Status.AssignedDropletName {
 				node = &n
-				log.Info("Randomly assigned droplet still exists. Skipping.")
+				logger.Info("Randomly assigned droplet still exists. Skipping.")
 				break
 			}
 		}
 		if node == nil {
-			// If current node isn't found select a new one
 			i := rand.IntnRange(0, len(nodes.Items))
 			node = &nodes.Items[i]
 		}
@@ -216,12 +207,12 @@ func (r *FloatingIPBindingReconciler) GetDroplet(
 		return nil, fmt.Errorf("Invalid NodeSelectorPolicy: %s", binding.Spec.NodeSelectorPolicy)
 	}
 
-	// Get dropletID int ID from providerId
+	// Get dropletID from providerId
 	providerIdParts := strings.Split(node.Spec.ProviderID, "//")
 	providerIdStr := providerIdParts[len(providerIdParts)-1]
 	dropletID, err := strconv.Atoi(providerIdStr)
 	if err != nil {
-		log.Error(err, "Could not convert providerId to int")
+		logger.Error(err, "Could not convert providerId to int")
 		return nil, err
 	}
 	return &Droplet{ID: dropletID, Name: node.Name}, nil
@@ -229,12 +220,10 @@ func (r *FloatingIPBindingReconciler) GetDroplet(
 
 func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 	ctx context.Context,
-	log logr.Logger,
 	binding *digitaloceanv1beta1.FloatingIPBinding,
 	droplet *Droplet,
 ) error {
-	// Use digitalocean API to assign floating IP
-	log = log.WithValues(
+	logger := log.FromContext(ctx).WithValues(
 		"dropletID", droplet.ID,
 		"dropletName", droplet.Name,
 		"floatingIP", binding.Spec.FloatingIP,
@@ -242,28 +231,25 @@ func (r *FloatingIPBindingReconciler) AssignFloatingIP(
 	// Get IP to see if it is already assigned
 	ip, _, err := r.DigitaloceanClient.FloatingIPs.Get(ctx, binding.Spec.FloatingIP)
 	if err != nil {
-		log.Error(err, "Failed to get floatingIP")
+		logger.Error(err, "Failed to get floatingIP")
 		return err
 	}
 
 	// Assign droplet to floating IP if not already assigned
 	if ip.Droplet != nil && ip.Droplet.ID == droplet.ID {
-		log.Info("Droplet is already assigned to floatingIP. Skipping.")
+		logger.Info("Droplet is already assigned to floatingIP. Skipping.")
 	} else {
-		// Assign IP if not already assigned
 		_, _, err = r.DigitaloceanClient.FloatingIPActions.Assign(ctx, binding.Spec.FloatingIP, droplet.ID)
 		if err != nil {
-			// Check that the error isn't a 422. This occurs if we are already updating the IP
 			doError, ok := err.(*godo.ErrorResponse)
 			if ok && doError.Response.StatusCode == 422 {
-				log.Info("FloatingIP is in pending state. Skipping.")
+				logger.Info("FloatingIP is in pending state. Skipping.")
 				return nil
-			} else {
-				log.Error(err, "Failed update floatingIP")
-				return err
 			}
+			logger.Error(err, "Failed update floatingIP")
+			return err
 		}
-		log.Info("Assigned droplet to FloatingIP")
+		logger.Info("Assigned droplet to FloatingIP")
 	}
 
 	return nil

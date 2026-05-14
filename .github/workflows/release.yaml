@@ -17,22 +17,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
 
       - name: Docker meta
         id: docker_meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/smirl/digitalocean-floating-ip-controller
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v4
 
       - name: Docker Login
-        uses: docker/login-action@v1
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -40,9 +40,10 @@ jobs:
 
       - name: Build and push
         id: docker_build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v7
         with:
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
 
@@ -54,28 +55,19 @@ jobs:
       - build
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
 
-      - name: Get tag name
-        uses: olegtarasov/get-tag@v2.1
-
-      - uses: azure/setup-kubectl@v1
+      - uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.19.4'
+          version: 'latest'
 
-      - uses: imranismail/setup-kustomize@v1
-        with:
-          kustomize-version: "4.0.5"
+      - uses: imranismail/setup-kustomize@v3
 
-      - uses: azure/k8s-set-context@v1
+      - uses: azure/k8s-set-context@v5
         with:
           method: service-account
           k8s-url: ${{ secrets.K8S_URL }}
           k8s-secret: ${{ secrets.K8S_SECRET }}
 
-      - uses: actions/setup-go@v2
-        with:
-          go-version: '^1.15.10'
-
       - name: Deploy
-        run: IMG=ghcr.io/smirl/digitalocean-floating-ip-controller:$GIT_TAG_NAME make deploy
+        run: IMG=ghcr.io/smirl/digitalocean-floating-ip-controller:${{ github.ref_name }} make deploy
