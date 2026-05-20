@@ -6,7 +6,7 @@ require (
 	github.com/digitalocean/godo v1.189.0
 	github.com/jarcoal/httpmock v1.4.1
 	github.com/onsi/ginkgo/v2 v2.28.3
-	github.com/onsi/gomega v1.40.0
+	github.com/onsi/gomega v1.41.0
 	golang.org/x/net v0.54.0
 	k8s.io/api v0.36.0
 	k8s.io/apimachinery v0.36.0
